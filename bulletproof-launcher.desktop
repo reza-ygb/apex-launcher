@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Name=Smart Launcher
+Comment=Intelligent Application Launcher with Auto-Detection
+Exec=LAUNCHER_PATH
+Icon=ICON_PATH
+Terminal=false
+Type=Application
+Categories=Utility;System;
+StartupNotify=true
+Keywords=launcher;applications;apps;smart;utilities;
+StartupWMClass=bulletproof_launcher

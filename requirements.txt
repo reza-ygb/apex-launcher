@@ -1,0 +1,41 @@
+# APEX LAUNCHER Requirements
+# 🚀 The Ultimate Linux Application Launcher
+
+# Core GUI Framework
+PyQt5>=5.15.0
+
+# Image processing and icon generation
+Pillow>=9.0.0
+
+# Network requests for enhanced features
+requests>=2.25.0Bulletproof Launcher Requirements - Ultimate Edition
+# 🚀 10X More Powerful - Auto Icon Generation & Organization
+
+# Core GUI Framework
+PyQt5>=5.15.0
+
+# Image processing and icon generation
+Pillow>=9.0.0
+
+# Network requests for enhanced features
+requests>=2.28.0
+
+# Configuration and data processing
+PyYAML>=6.0
+
+# Database for application caching
+# sqlite3 is included with Python 3
+
+# System utilities (usually pre-installed)
+# pathlib is included with Python 3.4+
+# hashlib is included with Python
+# configparser is included with Python
+# subprocess is included with Python
+# threading is included with Python
+# json is included with Python
+
+# Optional but recommended for better performance
+psutil>=5.9.0
+
+# For advanced icon theme detection
+python-xdg>=0.28

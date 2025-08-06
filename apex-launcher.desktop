@@ -1,0 +1,23 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=APEX Launcher
+Comment=The Ultimate Linux Application Launcher - 6000+ Apps, Auto Icons, Universal Compatibility
+Exec=python3 /usr/local/bin/apex-launcher
+Icon=/usr/share/pixmaps/apex-launcher.png
+Terminal=false
+Categories=Utility;System;
+StartupNotify=true
+Keywords=launcher;applications;apps;search;organize;
+MimeType=application/x-desktop;
+Actions=DeepScan;Refresh;
+
+[Desktop Action DeepScan]
+Name=Deep System Scan
+Exec=python3 /usr/local/bin/apex-launcher --deep-scan
+Icon=/usr/share/pixmaps/apex-launcher.png
+
+[Desktop Action Refresh]
+Name=Refresh Applications
+Exec=python3 /usr/local/bin/apex-launcher --refresh
+Icon=/usr/share/pixmaps/apex-launcher.png

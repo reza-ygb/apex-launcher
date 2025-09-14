@@ -12,6 +12,51 @@
 
 </div>
 
+<div align="center" style="margin: 16px 0;">
+
+<h3>📦 Quick Downloads</h3>
+
+<a href="https://github.com/reza-ygb/apex-launcher/releases/latest/download/apex-launcher.deb">
+  <img alt="Download .deb" src="https://img.shields.io/badge/Download-.deb-blue?logo=debian&logoColor=white&style=for-the-badge" />
+ </a>
+<a href="https://github.com/reza-ygb/apex-launcher/releases/latest/download/apex-launcher.rpm">
+  <img alt="Download .rpm" src="https://img.shields.io/badge/Download-.rpm-294172?logo=fedora&logoColor=white&style=for-the-badge" />
+ </a>
+<a href="https://github.com/reza-ygb/apex-launcher/releases/latest/download/apex-launcher.AppImage">
+  <img alt="Download AppImage" src="https://img.shields.io/badge/Download-AppImage-000000?logo=appimage&logoColor=white&style=for-the-badge" />
+ </a>
+<a href="https://aur.archlinux.org/packages/apex-launcher-bin">
+  <img alt="AUR" src="https://img.shields.io/badge/AUR-apex--launcher--bin-1793D1?logo=archlinux&logoColor=white&style=for-the-badge" />
+ </a>
+<a href="https://github.com/reza-ygb/apex-launcher/pkgs/container/apex-launcher">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-ghcr.io%2Freza--ygb%2Fapex--launcher-2496ED?logo=docker&logoColor=white&style=for-the-badge" />
+ </a>
+
+<p>
+
+```bash
+# Arch (AUR)
+yay -S apex-launcher-bin
+
+# Ubuntu/Debian (.deb)
+wget -q https://github.com/reza-ygb/apex-launcher/releases/latest/download/apex-launcher.deb \
+  && sudo dpkg -i apex-launcher.deb || sudo apt -f install
+
+# Fedora/RHEL (.rpm)
+sudo dnf install -y https://github.com/reza-ygb/apex-launcher/releases/latest/download/apex-launcher.rpm
+
+# AppImage (any distro)
+wget -q https://github.com/reza-ygb/apex-launcher/releases/latest/download/apex-launcher.AppImage \
+  && chmod +x apex-launcher.AppImage && ./apex-launcher.AppImage
+
+# Docker
+docker pull ghcr.io/reza-ygb/apex-launcher:latest
+```
+
+</p>
+
+</div>
+
 ---
 
 ## ✨ Features

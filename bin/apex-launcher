@@ -8,6 +8,7 @@ PKG_NAME="apex-launcher"
 # Resolve install/share dir candidates
 SHARE_DIR=""
 for d in \
+  "$HOME/.local/share/${PKG_NAME}" \
   "/usr/local/share/${PKG_NAME}" \
   "/usr/share/${PKG_NAME}" \
   "$(cd "$(dirname "$0")/.." && pwd)"; do

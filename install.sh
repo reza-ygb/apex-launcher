@@ -108,8 +108,9 @@ else
     rm -rf "$TEMP_DIR"
 fi
 
-# Fix desktop entry icon path
+# Fix desktop entry paths
 sed -i "s|^Icon=.*|Icon=$APPDIR/apex-launcher.png|" "$DESKTOP_DIR/apex-launcher.desktop"
+sed -i "s|^Exec=.*|Exec=$BIN/apex-launcher|" "$DESKTOP_DIR/apex-launcher.desktop"
 
 # Update desktop database if available
 if command -v update-desktop-database >/dev/null 2>&1; then
@@ -140,6 +141,10 @@ if ! echo "$PATH" | grep -q "$BIN"; then
     echo "⚠️  Note: $BIN is not in your PATH"
     echo "   Add this to your ~/.bashrc or ~/.zshrc:"
     echo "   export PATH=\"\$HOME/.local/bin:\$PATH\""
+    echo ""
+    echo "🔧 Adding to current session..."
+    export PATH="$BIN:$PATH"
+    echo "✅ PATH updated for this session"
     echo ""
 fi
 

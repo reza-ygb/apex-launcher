@@ -26,33 +26,65 @@
 
 ---
 
-## 🚀 Quick Install
+## 🚀 Features
+
+- **Lightweight**: Minimal memory footprint (<50MB RAM usage)
+- **Fast Search**: Real-time application filtering as you type
+- **Multi-Mode**: Both GUI and CLI interfaces
+- **Universal**: Works on all major Linux distributions
+- **Container Ready**: Docker support for CLI and GUI modes
+- **No Dependencies**: Falls back gracefully when GUI libraries unavailable
+- **Professional**: Production-ready with automated testing and packaging
+
+## 💾 Installation
 
 ### One-Line Install (Recommended)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reza-ygb/apex-launcher/main/install.sh | bash
 ```
 
+### Download Packages
+| Package | Best For | Download |
+|---------|----------|----------|
+| **.deb** | Ubuntu, Debian, Mint | [📥 Download](https://github.com/reza-ygb/apex-launcher/releases/latest/download/apex-launcher.deb) |
+| **.rpm** | Fedora, CentOS, RHEL | [📥 Download](https://github.com/reza-ygb/apex-launcher/releases/latest/download/apex-launcher.rpm) |
+| **.AppImage** | Any Linux distro | [📥 Download](https://github.com/reza-ygb/apex-launcher/releases/latest/download/apex-launcher.AppImage) |
+| **AUR** | Arch Linux | `yay -S apex-launcher-bin` |
+| **Docker** | Containers | `docker pull ghcr.io/reza-ygb/apex-launcher:latest` |
+
 ### Manual Install
 ```bash
 git clone https://github.com/reza-ygb/apex-launcher.git
 cd apex-launcher
-chmod +x install.sh
-./install.sh
+pip install -r requirements.txt
+python3 apex_launcher.py
 ```
 
-### Docker
+### Testing
 ```bash
-# GUI in Docker (with X11 forwarding)
-docker run --rm -it \
-  -e DISPLAY=$DISPLAY \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v /usr/share/applications:/usr/share/applications:ro \
-  ghcr.io/reza-ygb/apex-launcher:latest
+# Run tests
+./test.sh
 
-# CLI-only in Docker  
-docker run --rm -it ghcr.io/reza-ygb/apex-launcher:latest --cli
+# Test in Docker
+docker-compose up test
+
+# Test AUR package
+cd aur && ./test-aur.sh
 ```
+
+## 🤝 Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Built for the Linux community
+- Optimized for minimal resource usage
+- Professional packaging and CI/CD
 
 ---
 
@@ -88,6 +120,19 @@ sudo dnf install https://github.com/reza-ygb/apex-launcher/releases/latest/downl
 wget https://github.com/reza-ygb/apex-launcher/releases/latest/download/apex-launcher.AppImage
 chmod +x apex-launcher.AppImage
 ./apex-launcher.AppImage
+```
+
+### Docker
+```bash
+# CLI mode (recommended for containers)
+docker run --rm -it ghcr.io/reza-ygb/apex-launcher:latest --cli
+
+# GUI mode (Linux with X11 forwarding)
+docker run --rm -it \
+  -e DISPLAY=$DISPLAY \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v /usr/share/applications:/usr/share/applications:ro \
+  ghcr.io/reza-ygb/apex-launcher:latest
 ```
 
 ---
@@ -128,7 +173,39 @@ apex-launcher --cli
 
 ---
 
-## 🔧 Advanced Usage
+## � Usage
+
+### GUI Mode
+Simply run `apex-launcher` or click the desktop icon. The GUI will:
+- Automatically scan for installed applications
+- Provide real-time search as you type
+- Launch applications with a single click
+- Display applications organized by categories
+
+### CLI Mode
+Run `apex-launcher --cli` or `smart_cli_launcher.py` for terminal interface:
+```bash
+apex-launcher --cli
+# or
+python3 smart_cli_launcher.py
+```
+
+The CLI provides a numbered menu system for easy navigation.
+
+### Docker Usage
+```bash
+# Quick CLI launch
+docker run --rm -it ghcr.io/reza-ygb/apex-launcher:latest --cli
+
+# GUI mode (Linux desktop)
+docker run --rm -it \
+  -e DISPLAY=$DISPLAY \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v /usr/share/applications:/usr/share/applications:ro \
+  ghcr.io/reza-ygb/apex-launcher:latest
+```
+
+## 🔧 Development
 
 ### System-wide Installation
 ```bash

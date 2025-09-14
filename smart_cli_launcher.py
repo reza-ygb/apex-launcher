@@ -12,9 +12,53 @@ import subprocess
 import json
 from pathlib import Path
 
-# Import the detector from smart_launcher
-sys.path.insert(0, '/home/reza/code')
-from smart_launcher import ApplicationDetector
+# Optional fuzzy matching
+try:
+    from rapidfuzz import fuzz as _fuzz
+    _HAS_RAPIDFUZZ = True
+except Exception:
+    _HAS_RAPIDFUZZ = False
+
+# Try to import ApplicationDetector; fallback to a simple detector
+try:
+    from smart_launcher import ApplicationDetector  # type: ignore
+except Exception:
+    class ApplicationDetector:
+        def __init__(self):
+            pass
+        def detect_applications(self):
+            apps = {}
+            desktop_dirs = [
+                '/usr/share/applications',
+                '/usr/local/share/applications',
+                os.path.expanduser('~/.local/share/applications')
+            ]
+            for desktop_dir in desktop_dirs:
+                if not os.path.exists(desktop_dir):
+                    continue
+                for fp in Path(desktop_dir).glob('*.desktop'):
+                    try:
+                        import configparser
+                        cfg = configparser.ConfigParser()
+                        cfg.read(fp, encoding='utf-8')
+                        if 'Desktop Entry' not in cfg:
+                            continue
+                        entry = cfg['Desktop Entry']
+                        if entry.get('Type', '').lower() != 'application':
+                            continue
+                        name = entry.get('Name', fp.stem)
+                        cmd = entry.get('Exec', '').replace('%U', '').replace('%F', '').strip()
+                        desc = entry.get('Comment', entry.get('GenericName', 'Application'))
+                        category = 'Other'
+                        apps.setdefault(category, []).append({
+                            'name': name,
+                            'command': cmd,
+                            'description': desc,
+                            'source': 'desktop'
+                        })
+                    except Exception:
+                        continue
+            return apps
 
 class SmartCLILauncher:
     """Terminal-based smart launcher"""
@@ -219,13 +263,12 @@ class SmartCLILauncher:
             
     def matches_search(self, app: dict, query: str) -> bool:
         """Check if app matches search query"""
-        query = query.lower()
-        search_fields = [
-            app.get('name', '').lower(),
-            app.get('command', '').lower(),
-            app.get('description', '').lower()
-        ]
-        return any(query in field for field in search_fields)
+        q = query.lower()
+        fields = [app.get('name', '').lower(), app.get('command', '').lower(), app.get('description', '').lower()]
+        if _HAS_RAPIDFUZZ and len(q) >= 2:
+            score = max(_fuzz.partial_ratio(q, f) for f in fields)
+            return score >= 70
+        return any(q in f for f in fields)
         
     def launch_application(self, app: dict):
         """Launch an application"""

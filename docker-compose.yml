@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  # GUI mode with X11 forwarding (Linux only)
+  apex-launcher-gui:
+    build: .
+    image: ghcr.io/reza-ygb/apex-launcher:latest
+    container_name: apex-launcher-gui
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /usr/share/applications:/usr/share/applications:ro
+      - ~/.local/share/applications:/root/.local/share/applications:ro
+    network_mode: host
+    stdin_open: true
+    tty: true
+    command: apex-launcher
+    profiles:
+      - gui
+
+  # CLI mode (works everywhere)
+  apex-launcher-cli:
+    build: .
+    image: ghcr.io/reza-ygb/apex-launcher:latest
+    container_name: apex-launcher-cli
+    stdin_open: true
+    tty: true
+    command: apex-launcher --cli
+    profiles:
+      - cli
+
+  # Development mode with volume mounting
+  apex-launcher-dev:
+    build: .
+    container_name: apex-launcher-dev
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - .:/app:rw
+      - /usr/share/applications:/usr/share/applications:ro
+    network_mode: host
+    stdin_open: true
+    tty: true
+    command: bash
+    profiles:
+      - dev

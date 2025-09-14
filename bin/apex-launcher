@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Unified launcher wrapper: prefers GUI, falls back to CLI
+
+PKG_NAME="apex-launcher"
+
+# Resolve install/share dir candidates
+SHARE_DIR=""
+for d in \
+  "/usr/local/share/${PKG_NAME}" \
+  "/usr/share/${PKG_NAME}" \
+  "$(cd "$(dirname "$0")/.." && pwd)"; do
+  if [ -f "$d/apex_launcher.py" ]; then
+    SHARE_DIR="$d"
+    break
+  fi
+done
+
+if [ -z "$SHARE_DIR" ]; then
+  echo "apex-launcher: could not locate apex_launcher.py" >&2
+  exit 1
+fi
+
+GUI_SCRIPT="$SHARE_DIR/apex_launcher.py"
+CLI_SCRIPT="$SHARE_DIR/smart_cli_launcher.py"
+
+# Explicitly force CLI if requested
+for arg in "$@"; do
+  case "$arg" in
+    --cli)
+      exec python3 "$CLI_SCRIPT" "$@"
+      ;;
+  esac
+done
+
+# Determine if GUI can run: PyQt5 available and display present
+CAN_GUI=1
+if ! python3 -c "import PyQt5" >/dev/null 2>&1; then
+  CAN_GUI=0
+fi
+
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+  CAN_GUI=0
+fi
+
+if [ "$CAN_GUI" -eq 1 ]; then
+  exec python3 "$GUI_SCRIPT" "$@"
+else
+  if [ -f "$CLI_SCRIPT" ]; then
+    echo "[apex-launcher] GUI unavailable; falling back to CLI." >&2
+    exec python3 "$CLI_SCRIPT" "$@"
+  else
+    echo "[apex-launcher] GUI unavailable and CLI script missing." >&2
+    echo "Please install PyQt5 or ensure smart_cli_launcher.py is present." >&2
+    exit 1
+  fi
+fi

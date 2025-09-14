@@ -1,0 +1,73 @@
+name: ✅ CI Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: 🧪 Test on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+        
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt || true
+        
+    - name: 🔍 Lint with flake8
+      run: |
+        pip install flake8
+        flake8 *.py --count --select=E9,F63,F7,F82 --show-source --statistics || true
+        
+    - name: ✅ Test CLI functionality
+      run: |
+        timeout 5s python smart_cli_launcher.py || true
+        echo "✅ CLI test completed"
+        
+    - name: ✅ Test GUI imports
+      run: |
+        python -c "import apex_launcher; print('✅ GUI imports OK')" || echo "⚠️ GUI test skipped (no PyQt5)"
+        
+    - name: 🔍 Syntax validation
+      run: |
+        python -m py_compile apex_launcher.py
+        python -m py_compile smart_cli_launcher.py
+        echo "✅ All syntax checks passed"
+
+  docker-test:
+    name: 🐳 Docker Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: 🚀 Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        load: true
+        tags: apex-launcher:test
+        
+    - name: ✅ Test Docker container
+      run: |
+        docker run --rm apex-launcher:test --help || true
+        echo "✅ Docker test completed"

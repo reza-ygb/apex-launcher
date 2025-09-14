@@ -1,0 +1,27 @@
+post_install() {
+    echo ""
+    echo "==> APEX Launcher has been installed successfully!"
+    echo "==> Usage:"
+    echo "    apex-launcher          # GUI mode (if PyQt5 available)"
+    echo "    apex-launcher --cli    # CLI mode (always works)"
+    echo ""
+    echo "==> If GUI mode doesn't work, make sure PyQt5 is installed:"
+    echo "    sudo pacman -S python-pyqt5"
+    echo ""
+    echo "==> For more information:"
+    echo "    https://github.com/reza-ygb/apex-launcher"
+    echo ""
+}
+
+post_upgrade() {
+    post_install
+}
+
+post_remove() {
+    echo ""
+    echo "==> APEX Launcher has been removed."
+    echo "==> Cache files in ~/.cache/apex-launcher/ were kept."
+    echo "==> Remove them manually if desired:"
+    echo "    rm -rf ~/.cache/apex-launcher/"
+    echo ""
+}

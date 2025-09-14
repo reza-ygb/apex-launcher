@@ -1,90 +1,58 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Enhanced Bulletproof Launcher - Simple Install Script
-echo "🚀 Installing Enhanced Bulletproof Launcher..."
+APP_NAME="apex-launcher"
+PREFIX="${PREFIX:-$HOME/.local}"
+APPDIR="$PREFIX/share/$APP_NAME"
+BIN="$PREFIX/bin"
+DESKTOP_DIR="$HOME/.local/share/applications"
 
-# Create directories
-mkdir -p ~/.local/bin
-mkdir -p ~/.local/share/applications
+echo "🚀 Installing APEX Launcher into $PREFIX"
 
-# Copy launcher
-cp simple_bulletproof_launcher.py ~/.local/bin/
-chmod +x ~/.local/bin/simple_bulletproof_launcher.py
-
-# Create desktop entry
-cat > ~/.local/share/applications/bulletproof-launcher.desktop << EOF
-[Desktop Entry]
-Name=Enhanced Bulletproof Launcher
-Comment=Ultra-fast application launcher
-Exec=python3 ~/.local/bin/simple_bulletproof_launcher.py
-Icon=application-x-executable
-Terminal=false
-Type=Application
-Categories=Utility;
-EOF
-
-# Create symlink
-ln -sf ~/.local/bin/simple_bulletproof_launcher.py ~/.local/bin/bulletproof-launcher
-
-echo "✅ Installation complete!"
-echo "🚀 Run: bulletproof-launcher"
-
-# Check Python version
-if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 is required but not installed."
-    echo "Please install Python 3 first."
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "❌ python3 is required. Please install Python 3." >&2
     exit 1
 fi
 
-PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
-echo "✅ Found Python $PYTHON_VERSION"
+mkdir -p "$APPDIR" "$BIN" "$DESKTOP_DIR"
 
-# Create virtual environment if it doesn't exist
-if [ ! -d ".venv" ]; then
-    echo "📦 Creating virtual environment..."
-    python3 -m venv .venv
+# Install application files
+cp -f "apex_launcher.py" "$APPDIR/"
+cp -f "smart_cli_launcher.py" "$APPDIR/"
+cp -f "apex-launcher.png" "$APPDIR/"
+
+# Install wrapper
+if [ -f "bin/apex-launcher" ]; then
+    cp -f "bin/apex-launcher" "$BIN/"
+else
+    # Fallback: generate a minimal wrapper if running from tarball without bin/
+    cat > "$BIN/apex-launcher" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+PKG_NAME="apex-launcher"
+SHARE_DIR="$HOME/.local/share/$PKG_NAME"
+if python3 -c "import PyQt5" >/dev/null 2>&1 && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
+    exec python3 "$SHARE_DIR/apex_launcher.py" "$@"
+else
+    exec python3 "$SHARE_DIR/smart_cli_launcher.py" "$@"
+fi
+EOF
+fi
+chmod 0755 "$BIN/apex-launcher"
+
+# Desktop entry
+cp -f "apex-launcher.desktop" "$DESKTOP_DIR/"
+sed -i "s|^Icon=.*|Icon=$APPDIR/apex-launcher.png|" "$DESKTOP_DIR/apex-launcher.desktop"
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$HOME/.local/share/applications" || true
 fi
 
-# Activate virtual environment
-echo "⚡ Activating virtual environment..."
-source .venv/bin/activate
+echo "✅ Installed. Run: apex-launcher"
 
-# Install dependencies
-echo "� Installing Python dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# Make scripts executable
-chmod +x launcher.sh
-chmod +x bulletproof_launcher.py
-chmod +x smart_cli_launcher.py
-
-# Create desktop icon
-echo "🎨 Creating application icon..."
-python3 create_icon.py
-
-# Install desktop file
-echo "🖥️  Installing desktop integration..."
-DESKTOP_DIR="$HOME/.local/share/applications"
-mkdir -p "$DESKTOP_DIR"
-
-# Update desktop file with correct paths
-LAUNCHER_PATH="$(pwd)/bulletproof_launcher.py"
-ICON_PATH="$(pwd)/bulletproof_launcher_icon.png"
-
-sed "s|LAUNCHER_PATH|$LAUNCHER_PATH|g; s|ICON_PATH|$ICON_PATH|g" bulletproof-launcher.desktop > "$DESKTOP_DIR/bulletproof-launcher.desktop"
-
-# Update desktop database
-if command -v update-desktop-database &> /dev/null; then
-    update-desktop-database "$DESKTOP_DIR"
+# Optional: check dependencies and hint
+if ! python3 -c "import PyQt5" >/dev/null 2>&1; then
+    echo "ℹ️  PyQt5 missing. GUI will not start; CLI will be used."
+    echo "   Ubuntu/Debian: sudo apt install python3-pyqt5"
+    echo "   Arch: sudo pacman -S python-pyqt5"
 fi
-
-echo "✅ Installation complete!"
-echo ""
-echo "🎯 Available launchers:"
-echo "   • GUI Launcher: python3 bulletproof_launcher.py"
-echo "   • CLI Launcher: python3 smart_cli_launcher.py"
-echo "   • Rofi Launcher: ./launcher.sh"
-echo ""
-echo "📱 The GUI launcher is now available in your applications menu!"
-echo "   Look for 'Smart Launcher' in the Utilities category."

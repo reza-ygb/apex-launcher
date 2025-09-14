@@ -21,6 +21,8 @@ import json
 import hashlib
 import time
 import sqlite3
+import shutil
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from collections import defaultdict
 from functools import lru_cache
@@ -39,12 +41,15 @@ try:
 except ImportError:
     HAS_PIL = False
 
-# Optional imports
-try:
-    import requests
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
+# Removed RapidFuzz for lighter weight
+# try:
+#     from rapidfuzz import fuzz as _fuzz
+#     HAS_RAPIDFUZZ = True
+# except Exception:
+#     HAS_RAPIDFUZZ = False
+HAS_RAPIDFUZZ = False
+
+# Optional imports (none required here)
 
 # Check for essential dependencies
 if not HAS_PYQT5:
@@ -61,7 +66,7 @@ class IconGenerator:
     """🎨 Automatic Icon Generator for Applications"""
     
     def __init__(self):
-        self.icon_cache_dir = Path.home() / '.cache' / 'bulletproof-launcher' / 'icons'
+        self.icon_cache_dir = Path.home() / '.cache' / 'apex-launcher' / 'icons'
         self.icon_cache_dir.mkdir(parents=True, exist_ok=True)
         
         # Category-based icon mappings
@@ -215,11 +220,20 @@ class IconGenerator:
         return self.category_icons.get(category, self.category_icons['Other'])['symbol']
 
 
+_ICON_GENERATOR_SINGLETON = None
+
+def _get_icon_generator():
+    global _ICON_GENERATOR_SINGLETON
+    if _ICON_GENERATOR_SINGLETON is None:
+        _ICON_GENERATOR_SINGLETON = IconGenerator()
+    return _ICON_GENERATOR_SINGLETON
+
+
 class AdvancedApplicationDetector:
     """🔍 Ultra-Advanced Application Detection System"""
     
     def __init__(self):
-        self.db_path = Path.home() / '.cache' / 'bulletproof-launcher' / 'apps.db'
+        self.db_path = Path.home() / '.cache' / 'apex-launcher' / 'apps.db'
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_database()
         
@@ -275,10 +289,11 @@ class AdvancedApplicationDetector:
             ]
         }
         
-        # Performance optimization
+        # Performance optimization for minimal systems
         self.scan_cache = {}
         self.last_scan_time = 0
-        self.cache_duration = 300  # 5 minutes
+        self.cache_duration = 600  # 10 minutes cache for minimal systems
+        self.max_apps_per_scan = 1000  # Limit for low memory systems
     
     def init_database(self):
         """Initialize SQLite database for caching"""
@@ -296,79 +311,188 @@ class AdvancedApplicationDetector:
                     scan_time INTEGER
                 )
             ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS favorites (
+                    name TEXT PRIMARY KEY
+                )
+            ''')
             conn.commit()
     
-    @lru_cache(maxsize=1000)
     def detect_applications(self, force_refresh=False):
-        """Enhanced application detection with caching"""
-        current_time = time.time()
-        
-        # Check cache validity
-        if (not force_refresh and 
-            current_time - self.last_scan_time < self.cache_duration and 
-            self.scan_cache):
-            return self.scan_cache
-        
-        print("🔍 Starting ultra-fast application scan...")
-        
-        apps_by_category = {}
-        for cat in list(self.categories.keys()) + ['Other']:
-            apps_by_category[cat] = []
-        
-        # Multi-threaded scanning for speed
-        desktop_apps = self._scan_desktop_files()
-        path_apps = self._scan_path_commands()
-        snap_apps = self._scan_snap_packages()
-        flatpak_apps = self._scan_flatpak_packages()
-        appimage_apps = self._scan_appimage_files()
-        
-        print(f"Found: {len(desktop_apps)} desktop, {len(path_apps)} CLI, "
-              f"{len(snap_apps)} snap, {len(flatpak_apps)} flatpak, "
-              f"{len(appimage_apps)} AppImage apps")
-        
-        # Merge all applications
-        all_apps = {**desktop_apps, **path_apps, **snap_apps, 
-                   **flatpak_apps, **appimage_apps}
-        
-        # Categorize and generate icons
-        icon_generator = IconGenerator()
-        
-        for name, info in all_apps.items():
-            category = self._categorize_application(name, info)
+        """Bulletproof application detection - never crashes"""
+        try:
+            current_time = time.time()
             
-            # Generate icon
-            icon_path = icon_generator.generate_icon(
-                name, category, info.get('type', 'unknown')
-            )
+            # Check cache validity - with error handling
+            try:
+                if (not force_refresh and 
+                    current_time - self.last_scan_time < self.cache_duration and 
+                    self.scan_cache):
+                    return self.scan_cache
+            except Exception:
+                pass
+
+            # Fast-path: load from DB if recent - with error handling
+            if not force_refresh:
+                try:
+                    if os.path.exists(self.db_path):
+                        with sqlite3.connect(self.db_path, timeout=5) as conn:
+                            last = conn.execute('SELECT MAX(scan_time) FROM applications').fetchone()[0] or 0
+                            if last and (current_time - last) < self.cache_duration:
+                                apps_by_category = {cat: [] for cat in list(self.categories.keys()) + ['Other']}
+                                for row in conn.execute('SELECT name, command, description, category, type, icon_path, usage_count FROM applications'):
+                                    try:
+                                        name, command, description, category, type_, icon_path, usage = row
+                                        category = category or 'Other'
+                                        if category not in apps_by_category:
+                                            category = 'Other'
+                                        apps_by_category[category].append({
+                                            'name': name or 'Unknown',
+                                            'command': command or name or 'unknown',
+                                            'description': description or 'Application',
+                                            'type': type_ or 'unknown',
+                                            'icon_path': icon_path,
+                                            'category': category,
+                                            'usage_count': usage or 0
+                                        })
+                                    except Exception:
+                                        continue
+                                for cat in apps_by_category:
+                                    try:
+                                        apps_by_category[cat].sort(key=lambda x: (-x.get('usage_count', 0), x.get('name','').lower()))
+                                    except Exception:
+                                        pass
+                                self.scan_cache = apps_by_category
+                                self.last_scan_time = current_time
+                                return apps_by_category
+                except Exception:
+                    pass
             
-            app_entry = {
-                'name': name,
-                'command': info.get('command', name),
-                'description': info.get('description', 'Application'),
-                'type': info.get('type', 'unknown'),
-                'icon_path': icon_path,
-                'usage_count': 0
-            }
+            print("🔍 Starting bulletproof application scan...")
             
-            apps_by_category[category].append(app_entry)
-        
-        # Sort by usage and name
-        for cat in apps_by_category:
-            apps_by_category[cat].sort(
-                key=lambda x: (-x['usage_count'], x['name'].lower())
-            )
-        
-        # Update cache
-        self.scan_cache = apps_by_category
-        self.last_scan_time = current_time
-        
-        # Update database
-        self._update_database(all_apps, current_time)
-        
-        return apps_by_category
+            apps_by_category = {}
+            for cat in list(self.categories.keys()) + ['Other']:
+                apps_by_category[cat] = []
+            
+            # Safer parallel scans with timeouts
+            desktop_apps = {}
+            path_apps = {}
+            snap_apps = {}
+            flatpak_apps = {}
+            appimage_apps = {}
+            
+            try:
+                with ThreadPoolExecutor(max_workers=3, max_queue=10) as pool:  # Reduced workers
+                    futures = {}
+                    futures['desktop'] = pool.submit(self._scan_desktop_files)
+                    futures['path'] = pool.submit(self._scan_path_commands)
+                    futures['snap'] = pool.submit(self._scan_snap_packages)
+                    
+                    # Get results with timeout
+                    for scan_type, future in futures.items():
+                        try:
+                            result = future.result(timeout=15)  # 15 second timeout per scan
+                            if scan_type == 'desktop':
+                                desktop_apps = result
+                            elif scan_type == 'path':
+                                path_apps = result
+                            elif scan_type == 'snap':
+                                snap_apps = result
+                        except Exception:
+                            pass  # Silent fail for individual scans
+                            
+                    # Skip slower scans on minimal systems
+                    try:
+                        flatpak_apps = self._scan_flatpak_packages()
+                    except Exception:
+                        pass
+                        
+            except Exception:
+                # Fallback to single-threaded if threading fails
+                try:
+                    desktop_apps = self._scan_desktop_files()
+                except Exception:
+                    pass
+                try:
+                    path_apps = self._scan_path_commands()  
+                except Exception:
+                    pass
+            
+            total_found = len(desktop_apps) + len(path_apps) + len(snap_apps) + len(flatpak_apps) + len(appimage_apps)
+            print(f"Found: {len(desktop_apps)} desktop, {len(path_apps)} CLI, "
+                  f"{len(snap_apps)} snap, {len(flatpak_apps)} flatpak apps (total: {total_found})")
+            
+            # Safer merge with priority
+            priority = {'desktop': 0, 'flatpak': 1, 'snap': 2, 'appimage': 3, 'cli': 4}
+            all_apps = {}
+            
+            for src_name, src_apps in [('desktop', desktop_apps), ('flatpak', flatpak_apps), 
+                                       ('snap', snap_apps), ('appimage', appimage_apps), ('cli', path_apps)]:
+                if not isinstance(src_apps, dict):
+                    continue
+                for name, info in src_apps.items():
+                    try:
+                        if not name or not isinstance(info, dict):
+                            continue
+                        if name not in all_apps:
+                            all_apps[name] = info
+                        else:
+                            current_priority = priority.get(info.get('type','cli'), 9)
+                            existing_priority = priority.get(all_apps[name].get('type','cli'), 9)
+                            if current_priority < existing_priority:
+                                all_apps[name] = info
+                    except Exception:
+                        continue
+            
+            # Safer categorization
+            for name, info in all_apps.items():
+                try:
+                    category = self._categorize_application(name, info)
+                    if category not in apps_by_category:
+                        category = 'Other'
+                    
+                    app_entry = {
+                        'name': name or 'Unknown',
+                        'command': info.get('command', name) or 'unknown',
+                        'description': info.get('description', 'Application') or 'Application',
+                        'type': info.get('type', 'unknown'),
+                        'icon_path': info.get('icon_path'),
+                        'category': category,
+                        'usage_count': 0
+                    }
+                    
+                    apps_by_category[category].append(app_entry)
+                except Exception:
+                    continue
+            
+            # Safe sorting
+            for cat in apps_by_category:
+                try:
+                    apps_by_category[cat].sort(
+                        key=lambda x: (-x.get('usage_count', 0), x.get('name','').lower())
+                    )
+                except Exception:
+                    pass
+            
+            # Update cache
+            self.scan_cache = apps_by_category
+            self.last_scan_time = current_time
+            
+            # Safe database update
+            try:
+                self._update_database(all_apps, current_time)
+            except Exception:
+                pass
+            
+            return apps_by_category
+            
+        except Exception as e:
+            # Ultimate fallback - return minimal structure
+            print(f"Scan failed: {e}")
+            return {cat: [] for cat in list(self.categories.keys()) + ['Other']}
     
     def _scan_desktop_files(self):
-        """Enhanced desktop file scanning"""
+        """Bulletproof desktop file scanning - never crashes"""
         apps = {}
         desktop_dirs = [
             '/usr/share/applications',
@@ -380,76 +504,176 @@ class AdvancedApplicationDetector:
         ]
         
         for desktop_dir in desktop_dirs:
-            if not os.path.exists(desktop_dir):
-                continue
-                
-            for file_path in Path(desktop_dir).glob('*.desktop'):
-                try:
-                    config = configparser.ConfigParser()
-                    config.read(file_path, encoding='utf-8')
-                    
-                    if 'Desktop Entry' not in config:
-                        continue
-                        
-                    entry = config['Desktop Entry']
-                    if entry.get('NoDisplay', '').lower() == 'true':
-                        continue
-                    
-                    if entry.get('Type', '').lower() != 'application':
-                        continue
-                        
-                    name = entry.get('Name', file_path.stem)
-                    command = entry.get('Exec', '')
-                    description = entry.get('Comment', entry.get('GenericName', 'Desktop Application'))
-                    
-                    # Clean command
-                    if command:
-                        command = command.split()[0].replace('%U', '').replace('%F', '').strip()
-                        
-                    apps[name] = {
-                        'command': command,
-                        'description': description,
-                        'type': 'desktop',
-                        'desktop_file': str(file_path)
-                    }
-                    
-                except Exception as e:
+            try:
+                if not os.path.exists(desktop_dir) or not os.access(desktop_dir, os.R_OK):
                     continue
+                    
+                # Use os.listdir instead of Path.glob for better error handling
+                try:
+                    files = [f for f in os.listdir(desktop_dir) if f.endswith('.desktop')]
+                except (OSError, PermissionError):
+                    continue
+                    
+                for filename in files[:200]:  # Limit files to prevent memory issues
+                    file_path = os.path.join(desktop_dir, filename)
+                    try:
+                        # Check file accessibility first
+                        if not os.path.isfile(file_path) or not os.access(file_path, os.R_OK):
+                            continue
+                            
+                        # Check file size to avoid huge files
+                        try:
+                            if os.path.getsize(file_path) > 50000:  # Skip files > 50KB
+                                continue
+                        except OSError:
+                            continue
+                            
+                        name = os.path.splitext(filename)[0]
+                        command = ''
+                        description = 'Application'
+                        en_name = None
+                        en_desc = None
+                        in_entry = False
+                        nodisplay = False
+                        app_type = ''
+                        icon_value = ''
+                        
+                        # Safe file reading with multiple fallbacks
+                        content = None
+                        for encoding in ['utf-8', 'latin-1', 'ascii']:
+                            try:
+                                with open(file_path, 'r', encoding=encoding, errors='replace') as f:
+                                    content = f.read(10000)  # Limit read size
+                                break
+                            except (UnicodeDecodeError, OSError, IOError):
+                                continue
+                                
+                        if not content:
+                            continue
+                            
+                        # Parse content safely
+                        for line in content.split('\n')[:100]:  # Limit lines
+                            try:
+                                line = line.strip()
+                                if not line or line.startswith('#'):
+                                    continue
+                                if line.startswith('['):
+                                    in_entry = (line.lower() == '[desktop entry]')
+                                    continue
+                                if not in_entry or '=' not in line:
+                                    continue
+                                    
+                                try:
+                                    key, value = line.split('=', 1)
+                                    key = key.strip().lower()
+                                    value = value.strip()
+                                except ValueError:
+                                    continue
+                                    
+                                if key == 'nodisplay':
+                                    nodisplay = (value.lower() == 'true')
+                                    if nodisplay:
+                                        break
+                                elif key == 'type':
+                                    app_type = value.lower()
+                                elif key == 'name':
+                                    name = value or name
+                                elif key == 'name[en]':
+                                    en_name = value
+                                elif key == 'exec':
+                                    command = value
+                                elif key == 'comment':
+                                    description = value or description
+                                elif key == 'comment[en]':
+                                    en_desc = value
+                                elif key == 'genericname' and description == 'Application':
+                                    description = value
+                                elif key == 'genericname[en]':
+                                    if not en_desc:
+                                        en_desc = value
+                                elif key == 'icon':
+                                    icon_value = value
+                            except Exception:
+                                continue
+
+                        if nodisplay or (app_type and app_type != 'application'):
+                            continue
+
+                        if command:
+                            try:
+                                # Clean placeholders safely
+                                for placeholder in ['%U', '%F', '%u', '%f', '%i', '%c', '%k']:
+                                    command = command.replace(placeholder, '')
+                                command = command.strip()
+                                # Extract executable
+                                if command:
+                                    command = command.split()[0]
+                            except Exception:
+                                continue
+
+                        display_name = (en_name or name).strip()
+                        display_desc = (en_desc or description).strip()
+                        
+                        if display_name:  # Only add if we have a name
+                            apps[display_name] = {
+                                'command': command or display_name,
+                                'description': display_desc or 'Application',
+                                'type': 'desktop',
+                                'desktop_file': file_path,
+                                'icon_path': icon_value
+                            }
+                    except Exception:
+                        # Silent fail for individual files
+                        continue
+            except Exception:
+                # Silent fail for entire directory
+                continue
                     
         return apps
     
     def _scan_path_commands(self):
-        """Smart PATH scanning with filtering"""
+        """Lightweight PATH scanning for minimal systems"""
         apps = {}
         path_dirs = os.environ.get('PATH', '').split(':')
         
-        # Filter common directories
-        useful_dirs = []
+        # Only scan essential directories to save memory
+        essential_dirs = []
         for path_dir in path_dirs:
-            if any(useful in path_dir for useful in [
-                '/usr/bin', '/usr/local/bin', '/bin', '/sbin',
-                '/.local/bin', '/opt'
+            if any(essential in path_dir for essential in [
+                '/usr/bin', '/bin', '/usr/local/bin'
             ]):
-                useful_dirs.append(path_dir)
+                essential_dirs.append(path_dir)
         
-        for path_dir in useful_dirs[:20]:  # Limit for performance
+        # Limit to 6 directories max for performance
+        for path_dir in essential_dirs[:6]:
             if not os.path.exists(path_dir):
                 continue
                 
             try:
-                for file_path in Path(path_dir).iterdir():
-                    if (file_path.is_file() and 
-                        os.access(file_path, os.X_OK) and
-                        not file_path.name.startswith('.') and
-                        len(file_path.name) > 2 and
-                        not file_path.name.endswith('.so')):
-                        
-                        name = file_path.name
-                        apps[name] = {
-                            'command': name,
-                            'description': f'Command line tool ({path_dir})',
-                            'type': 'cli'
-                        }
+                # Limit entries to prevent memory issues
+                entries = 0
+                with os.scandir(path_dir) as it:
+                    for entry in it:
+                        if entries >= 100:  # Hard limit for minimal systems
+                            break
+                        try:
+                            if not entry.is_file():
+                                continue
+                            name = entry.name
+                            if (name.startswith('.') or len(name) <= 2 or 
+                                name.endswith(('.so', '.a', '.o')) or
+                                name in ['ls', 'cp', 'mv', 'rm', 'cat', 'echo']):  # Skip basic commands
+                                continue
+                            if not os.access(entry.path, os.X_OK):
+                                continue
+                            apps[name] = {
+                                'command': name,
+                                'description': f'CLI tool',
+                                'type': 'cli'
+                            }
+                            entries += 1
+                        except Exception:
+                            continue
                         
             except (PermissionError, OSError):
                 continue
@@ -457,70 +681,57 @@ class AdvancedApplicationDetector:
         return apps
     
     def _scan_snap_packages(self):
-        """Scan Snap packages"""
+        """Ultra-fast Snap scanning"""
         apps = {}
         try:
             result = subprocess.run(['snap', 'list'], 
-                                  capture_output=True, text=True, timeout=10)
+                                  capture_output=True, text=True, timeout=3)  # Shorter timeout
             if result.returncode == 0:
-                for line in result.stdout.strip().split('\n')[1:]:  # Skip header
-                    parts = line.split()
-                    if len(parts) >= 1:
-                        name = parts[0]
-                        apps[f"{name} (Snap)"] = {
-                            'command': name,
-                            'description': f'Snap package: {name}',
-                            'type': 'snap'
-                        }
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+                lines = result.stdout.strip().split('\n')[1:11]  # Limit to 10 snaps max
+                for line in lines:
+                    try:
+                        parts = line.split()
+                        if len(parts) >= 1:
+                            name = parts[0]
+                            apps[f"{name}"] = {  # Remove (Snap) suffix for cleaner names
+                                'command': name,
+                                'description': f'Snap: {name}',
+                                'type': 'snap'
+                            }
+                    except Exception:
+                        continue
+        except Exception:
             pass
         return apps
     
     def _scan_flatpak_packages(self):
-        """Scan Flatpak packages"""
+        """Ultra-fast Flatpak scanning"""
         apps = {}
         try:
             result = subprocess.run(['flatpak', 'list', '--app'], 
-                                  capture_output=True, text=True, timeout=10)
+                                  capture_output=True, text=True, timeout=3)  # Shorter timeout
             if result.returncode == 0:
-                for line in result.stdout.strip().split('\n'):
-                    parts = line.split('\t')
-                    if len(parts) >= 2:
-                        name = parts[0]
-                        app_id = parts[1]
-                        apps[f"{name} (Flatpak)"] = {
-                            'command': f'flatpak run {app_id}',
-                            'description': f'Flatpak: {name}',
-                            'type': 'flatpak'
-                        }
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+                lines = result.stdout.strip().split('\n')[:10]  # Limit to 10 flatpaks max
+                for line in lines:
+                    try:
+                        parts = line.split('\t')
+                        if len(parts) >= 2:
+                            name = parts[0]
+                            app_id = parts[1]
+                            apps[name] = {  # Remove (Flatpak) suffix for cleaner names
+                                'command': f'flatpak run {app_id}',
+                                'description': f'Flatpak: {name}',
+                                'type': 'flatpak'
+                            }
+                    except Exception:
+                        continue
+        except Exception:
             pass
         return apps
     
     def _scan_appimage_files(self):
-        """Scan AppImage files"""
-        apps = {}
-        search_dirs = [
-            os.path.expanduser('~/Applications'),
-            os.path.expanduser('~/AppImages'),
-            os.path.expanduser('~/Downloads'),
-            '/opt'
-        ]
-        
-        for search_dir in search_dirs:
-            if not os.path.exists(search_dir):
-                continue
-                
-            for file_path in Path(search_dir).rglob('*.AppImage'):
-                if os.access(file_path, os.X_OK):
-                    name = file_path.stem
-                    apps[f"{name} (AppImage)"] = {
-                        'command': str(file_path),
-                        'description': f'AppImage: {name}',
-                        'type': 'appimage'
-                    }
-        
-        return apps
+        """Minimal AppImage scanning - skip for performance"""
+        return {}
     
     def _categorize_application(self, name, info):
         """Advanced application categorization"""
@@ -559,13 +770,21 @@ class AdvancedApplicationDetector:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 for name, info in apps.items():
+                    category = self._categorize_application(name, info)
+                    icon_path = info.get('icon_path')
                     conn.execute('''
                         INSERT OR REPLACE INTO applications 
-                        (name, command, description, type, scan_time)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (name, info.get('command', ''), 
-                         info.get('description', ''), 
-                         info.get('type', ''), scan_time))
+                        (name, command, description, category, type, icon_path, scan_time)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        name,
+                        info.get('command', ''),
+                        info.get('description', ''),
+                        category,
+                        info.get('type', ''),
+                        icon_path,
+                        scan_time
+                    ))
                 conn.commit()
         except Exception as e:
             print(f"Database update failed: {e}")
@@ -582,7 +801,7 @@ class ModernAppCard(QWidget):
         self.setup_ui()
         
     def setup_ui(self):
-        self.setFixedSize(320, 90)
+        self.setFixedSize(300, 80)
         self.setStyleSheet("""
             ModernAppCard {
                 background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
@@ -610,24 +829,8 @@ class ModernAppCard(QWidget):
         icon_label.setFixedSize(64, 64)
         icon_label.setAlignment(Qt.AlignCenter)
         
-        # Load real icon or generate one
-        if (self.app_data.get('icon_path') and 
-            isinstance(self.app_data['icon_path'], str) and 
-            os.path.exists(self.app_data['icon_path'])):
-            # Load real icon file
-            pixmap = QPixmap(self.app_data['icon_path'])
-            if not pixmap.isNull():
-                scaled_pixmap = pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                icon_label.setPixmap(scaled_pixmap)
-            else:
-                self._set_default_icon(icon_label)
-        elif (self.app_data.get('icon_path') and 
-              isinstance(self.app_data['icon_path'], dict)):
-            # Handle text-based icon info
-            icon_info = self.app_data['icon_path']
-            self._set_text_icon(icon_label, icon_info)
-        else:
-            self._set_default_icon(icon_label)
+        # Simple icon - just text, no complex generation
+        self._set_simple_icon(icon_label)
         
         # Info section
         info_widget = QWidget()
@@ -695,6 +898,40 @@ class ModernAppCard(QWidget):
         self.shadow.setOffset(0, 2)
         self.setGraphicsEffect(self.shadow)
     
+    def _set_simple_icon(self, icon_label):
+        """Set a simple, fast text-based icon"""
+        app_type = self.app_data.get('type', 'desktop')
+        category = self.app_data.get('category', 'Other')
+        
+        # Simple icon mapping
+        type_icons = {
+            'desktop': '🖥️',
+            'cli': '⚡', 
+            'snap': '📦',
+            'flatpak': '📦',
+            'appimage': '📦'
+        }
+        
+        category_icons = {
+            'Programming': '💻', 'Security': '🔒', 'System': '⚙️',
+            'Internet': '🌐', 'Media': '🎬', 'Office': '📄', 
+            'Graphics': '🎨', 'Games': '🎮', 'Development': '🔧',
+            'Education': '📚', 'Other': '📁'
+        }
+        
+        # Choose icon (category first, then type)
+        icon_text = category_icons.get(category) or type_icons.get(app_type, '📁')
+        
+        icon_label.setText(icon_text)
+        icon_label.setStyleSheet("""
+            font-size: 28px;
+            background: rgba(70, 130, 180, 0.3);
+            border-radius: 8px;
+            border: 1px solid rgba(70, 130, 180, 0.5);
+            color: white;
+            padding: 4px;
+        """)
+    
     def _set_text_icon(self, icon_label, icon_info):
         """Set text-based icon with category colors"""
         symbol = icon_info.get('symbol', '📁')
@@ -756,9 +993,13 @@ class ApexLauncher(QMainWindow):
         self.current_category = 'All'
         self.filtered_apps = []
         
-        # Stats tracking
+    # Stats tracking
         self.total_apps = 0
         self.launch_count = 0
+        # Removed usable_only feature for simplicity
+        # self.usable_only = False
+        # Removed favorites for simplicity 
+        # self.favorites = set()
         
         self.setup_ui()
         self.setup_shortcuts()
@@ -766,8 +1007,8 @@ class ApexLauncher(QMainWindow):
         
     def setup_ui(self):
         self.setWindowTitle("🚀 APEX LAUNCHER - The Ultimate Linux Application Launcher")
-        self.setMinimumSize(1200, 800)
-        self.resize(1400, 900)
+        self.setMinimumSize(1000, 700)
+        self.resize(1200, 800)
         
         # Ultra-modern styling
         self.setStyleSheet("""
@@ -803,39 +1044,13 @@ class ApexLauncher(QMainWindow):
     def create_enhanced_sidebar(self, main_layout):
         """Create ultra-modern sidebar"""
         sidebar = QWidget()
-        sidebar.setFixedWidth(280)
+        sidebar.setFixedWidth(250)
         sidebar.setStyleSheet("""
             QWidget {
                 background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
                     stop: 0 rgba(44, 62, 80, 0.95),
                     stop: 1 rgba(52, 73, 94, 0.95));
                 color: white;
-            }
-            QPushButton {
-                background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
-                    stop: 0 rgba(52, 152, 219, 0.3),
-                    stop: 1 rgba(41, 128, 185, 0.3));
-                border: 2px solid rgba(255, 255, 255, 0.1);
-                border-radius: 10px;
-                color: white;
-                font-weight: bold;
-                font-size: 13px;
-                padding: 12px;
-                margin: 3px;
-                text-align: left;
-                font-family: 'Segoe UI', Arial, sans-serif;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
-                    stop: 0 rgba(52, 152, 219, 0.8),
-                    stop: 1 rgba(41, 128, 185, 0.8));
-                border: 2px solid rgba(255, 255, 255, 0.3);
-                transform: scale(1.02);
-            }
-            QPushButton:pressed {
-                background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
-                    stop: 0 rgba(41, 128, 185, 0.9),
-                    stop: 1 rgba(39, 174, 96, 0.9));
             }
         """)
         
@@ -881,26 +1096,41 @@ class ApexLauncher(QMainWindow):
         title_layout.addWidget(version)
         sidebar_layout.addWidget(title_widget)
         
-        # Quick actions
-        quick_actions = QWidget()
-        qa_layout = QVBoxLayout(quick_actions)
-        qa_layout.setContentsMargins(0, 0, 0, 0)
+        # Removed heavy quick actions for better performance
         
-        refresh_btn = QPushButton("🔄 Refresh Apps")
-        refresh_btn.clicked.connect(lambda: self.load_apps(force_refresh=True))
-        
-        scan_btn = QPushButton("🔍 Deep Scan")
-        scan_btn.clicked.connect(self.deep_scan)
-        
-        qa_layout.addWidget(refresh_btn)
-        qa_layout.addWidget(scan_btn)
-        sidebar_layout.addWidget(quick_actions)
+        # Quick actions - REMOVED (too heavy)
+        # qa_layout.addWidget(refresh_btn)
+        # qa_layout.addWidget(scan_btn)
+        # qa_layout.addWidget(favs_btn)
+        # qa_layout.addWidget(usable_btn)
+        # sidebar_layout.addWidget(quick_actions)
         
         # Category buttons
         self.category_buttons = {}
         
+        # Standard button style for all category buttons
+        category_btn_style = """
+            QPushButton {
+                background: rgba(85, 85, 85, 0.6);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 6px;
+                color: white;
+                font-weight: bold;
+                font-size: 12px;
+                padding: 8px 6px;
+                margin: 1px;
+                text-align: left;
+                min-height: 30px;
+            }
+            QPushButton:hover {
+                background: rgba(120, 120, 120, 0.8);
+                border: 1px solid rgba(255, 255, 255, 0.4);
+            }
+        """
+        
         # All applications
         all_btn = QPushButton("📋 All Applications")
+        all_btn.setStyleSheet(category_btn_style)
         all_btn.clicked.connect(lambda: self.set_category('All'))
         self.category_buttons['All'] = all_btn
         sidebar_layout.addWidget(all_btn)
@@ -916,12 +1146,14 @@ class ApexLauncher(QMainWindow):
         for category in self.detector.categories.keys():
             icon = category_icons.get(category, '📁')
             btn = QPushButton(f"{icon} {category}")
+            btn.setStyleSheet(category_btn_style)
             btn.clicked.connect(lambda checked, cat=category: self.set_category(cat))
             self.category_buttons[category] = btn
             sidebar_layout.addWidget(btn)
         
         # Other category
         other_btn = QPushButton("📁 Other")
+        other_btn.setStyleSheet(category_btn_style)
         other_btn.clicked.connect(lambda: self.set_category('Other'))
         self.category_buttons['Other'] = other_btn
         sidebar_layout.addWidget(other_btn)
@@ -972,21 +1204,22 @@ class ApexLauncher(QMainWindow):
         """)
         header_layout = QHBoxLayout(header_widget)
         
-        # Enhanced search
+        # Enhanced search with better styling
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("🔍 Search in 6000+ applications...")
+        self.search_input.setPlaceholderText("🔍 Search applications...")
         self.search_input.setStyleSheet("""
             QLineEdit {
                 background: rgba(255, 255, 255, 0.95);
-                border: 3px solid rgba(52, 152, 219, 0.8);
-                border-radius: 15px;
-                font-size: 16px;
-                padding: 15px 20px;
+                border: 2px solid rgba(52, 152, 219, 0.6);
+                border-radius: 12px;
+                font-size: 14px;
+                padding: 12px 16px;
                 font-family: 'Segoe UI', Arial, sans-serif;
                 color: #2c3e50;
+                min-height: 20px;
             }
             QLineEdit:focus {
-                border: 3px solid #3498db;
+                border: 2px solid #3498db;
                 background: white;
             }
         """)
@@ -1023,17 +1256,18 @@ class ApexLauncher(QMainWindow):
         header_layout.addWidget(view_widget, 1)
         content_layout.addWidget(header_widget)
         
-        # Category title
+        # Category title with better styling
         self.category_title = QLabel("📋 All Applications")
         self.category_title.setStyleSheet("""
-            background: rgba(255, 255, 255, 0.15);
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 8px;
             color: white;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: bold;
-            padding: 12px;
+            padding: 10px 15px;
             font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 5px 0px;
         """)
         content_layout.addWidget(self.category_title)
         
@@ -1075,19 +1309,9 @@ class ApexLauncher(QMainWindow):
         main_layout.addWidget(content)
     
     def setup_shortcuts(self):
-        """Setup keyboard shortcuts"""
-        # Quick search
+        """Minimal shortcuts only"""
+        # Quick search only
         QShortcut(QKeySequence("Ctrl+F"), self, self.focus_search)
-        QShortcut(QKeySequence("/"), self, self.focus_search)
-        
-        # Refresh
-        QShortcut(QKeySequence("F5"), self, lambda: self.load_apps(force_refresh=True))
-        QShortcut(QKeySequence("Ctrl+R"), self, lambda: self.load_apps(force_refresh=True))
-        
-        # Categories
-        QShortcut(QKeySequence("Ctrl+1"), self, lambda: self.set_category('Programming'))
-        QShortcut(QKeySequence("Ctrl+2"), self, lambda: self.set_category('Security'))
-        QShortcut(QKeySequence("Ctrl+3"), self, lambda: self.set_category('System'))
     
     def focus_search(self):
         """Focus search input"""
@@ -1154,38 +1378,54 @@ class ApexLauncher(QMainWindow):
         # Show all apps by default
         self.set_category('All')
     
-    def deep_scan(self):
-        """Perform deep system scan"""
-        self.statusBar().showMessage("🔍 Performing deep system scan...")
-        self.load_apps(force_refresh=True)
+    # Removed deep_scan for simplicity
+    # def deep_scan(self):
+    
+    # Removed toggle_usable_only for simplicity  
+    # def toggle_usable_only(self, checked):
     
     def set_category(self, category):
         """Set active category with enhanced styling"""
         self.current_category = category
         
-        # Update button styles
+        # Update button styles (simplified)
         for cat, btn in self.category_buttons.items():
             if cat == category:
                 btn.setStyleSheet("""
                     QPushButton {
-                        background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 1,
-                            stop: 0 rgba(52, 152, 219, 0.9),
-                            stop: 1 rgba(41, 128, 185, 0.9));
-                        border: 3px solid rgba(255, 255, 255, 0.6);
-                        border-radius: 10px;
+                        background: rgba(52, 152, 219, 0.9);
+                        border: 2px solid rgba(255, 255, 255, 0.8);
+                        border-radius: 6px;
                         color: white;
                         font-weight: bold;
-                        font-size: 13px;
-                        padding: 12px;
-                        margin: 3px;
+                        font-size: 12px;
+                        padding: 8px 6px;
+                        margin: 1px;
                         text-align: left;
-                        font-family: 'Segoe UI', Arial, sans-serif;
+                        min-height: 30px;
                     }
                 """)
             else:
-                btn.setStyleSheet("")
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background: rgba(85, 85, 85, 0.6);
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                        border-radius: 6px;
+                        color: white;
+                        font-weight: bold;
+                        font-size: 12px;
+                        padding: 8px 6px;
+                        margin: 1px;
+                        text-align: left;
+                        min-height: 30px;
+                    }
+                    QPushButton:hover {
+                        background: rgba(120, 120, 120, 0.8);
+                        border: 1px solid rgba(255, 255, 255, 0.4);
+                    }
+                """)
         
-        # Update title with enhanced icons
+        # Update title (simplified)
         category_icons = {
             'All': '📋', 'Programming': '💻', 'Security': '🔒', 
             'System': '⚙️', 'Internet': '🌐', 'Media': '🎬',
@@ -1207,7 +1447,7 @@ class ApexLauncher(QMainWindow):
         """Enhanced application filtering"""
         search_text = self.search_input.text().lower().strip()
         
-        # Get apps for current category
+        # Get apps for current category (simplified)
         if self.current_category == 'All':
             apps = []
             for app_list in self.all_apps.values():
@@ -1215,15 +1455,18 @@ class ApexLauncher(QMainWindow):
         else:
             apps = self.all_apps.get(self.current_category, [])
         
-        # Apply search filter
+        # Apply search filter (simplified)
         if search_text:
             filtered = []
             for app in apps:
-                if (search_text in app['name'].lower() or 
-                    search_text in app['description'].lower() or
-                    search_text in app['command'].lower()):
+                if (search_text in app.get('name','').lower() or
+                    search_text in app.get('description','').lower() or
+                    search_text in app.get('command','').lower()):
                     filtered.append(app)
             apps = filtered
+
+        # Simple sort by name only
+        apps.sort(key=lambda x: x.get('name','').lower())
         
         self.filtered_apps = apps
         self.display_apps(apps)
@@ -1294,47 +1537,32 @@ class ApexLauncher(QMainWindow):
         self.statusBar().showMessage(f"📋 Displaying {len(apps):,} applications")
     
     def launch_app(self, app_data):
-        """Enhanced application launcher"""
-        command = app_data.get('command', '')
-        name = app_data.get('name', 'Unknown')
-        app_type = app_data.get('type', 'unknown')
-        
-        if not command:
-            QMessageBox.warning(self, "Launch Error", 
-                              f"No launch command found for {name}")
-            return
-        
+        """Simple, fast application launcher"""
         try:
-            # Enhanced launch based on type
-            if app_type == 'flatpak':
-                subprocess.Popen(command.split(), 
-                               stdout=subprocess.DEVNULL, 
-                               stderr=subprocess.DEVNULL)
-            elif app_type == 'snap':
-                subprocess.Popen(['snap', 'run', command], 
-                               stdout=subprocess.DEVNULL, 
-                               stderr=subprocess.DEVNULL)
-            elif app_type == 'appimage':
-                subprocess.Popen([command], 
-                               stdout=subprocess.DEVNULL, 
-                               stderr=subprocess.DEVNULL)
-            else:
-                subprocess.Popen(command, shell=True, 
-                               stdout=subprocess.DEVNULL, 
-                               stderr=subprocess.DEVNULL)
+            command = app_data.get('command', '').strip()
+            name = app_data.get('name', 'Unknown').strip()
             
-            # Update statistics
+            if not command or not name:
+                self.statusBar().showMessage(f"❌ No command for {name}", 3000)
+                return
+            
+            # Simple launch - no complex handling
+            subprocess.Popen(command, shell=True, 
+                           stdout=subprocess.DEVNULL, 
+                           stderr=subprocess.DEVNULL)
+            
+            # Update launch counter only
             self.launch_count += 1
-            
-            # Show success message
-            self.statusBar().showMessage(f"🚀 Successfully launched: {name}", 5000)
-            
-            # Optional: Add to recent/favorites
-            
+            self.statusBar().showMessage(f"🚀 Launched: {name}", 2000)
+                
         except Exception as e:
-            QMessageBox.critical(self, "Launch Error", 
-                               f"Failed to launch {name}:\n{str(e)}")
-            self.statusBar().showMessage(f"❌ Failed to launch: {name}", 5000)
+            self.statusBar().showMessage(f"❌ Failed: {str(e)[:30]}", 3000)
+
+    # Removed keyPressEvent for favorites (too complex)
+    # def keyPressEvent(self, event):
+        
+    # Removed toggle_favorite_current (too complex) 
+    # def toggle_favorite_current(self):
 
 
 class AppLoader(QObject):
@@ -1357,28 +1585,69 @@ class AppLoader(QObject):
 
 
 def main():
-    """Enhanced main function"""
-    app = QApplication(sys.argv)
-    app.setApplicationName("APEX Launcher")
-    app.setApplicationVersion("3.0")
-    
-    # Set application icon
-    icon_path = Path(__file__).parent / "bulletproof_launcher_icon_64.png"
-    if icon_path.exists():
-        app.setWindowIcon(QIcon(str(icon_path)))
-    
-    # Create and show launcher
-    launcher = ApexLauncher()
-    launcher.show()
-    
-    # Center window
-    screen = app.primaryScreen().geometry()
-    launcher.move(
-        (screen.width() - launcher.width()) // 2,
-        (screen.height() - launcher.height()) // 2
-    )
-    
-    sys.exit(app.exec_())
+    """Ultra-safe main function with comprehensive crash protection"""
+    try:
+        # Basic CLI flags to control behavior
+        refresh_flag = any(arg in sys.argv for arg in ["--refresh", "-r"]) 
+        deep_flag = any(arg in sys.argv for arg in ["--deep-scan", "--deep", "-d"]) 
+
+        app = QApplication(sys.argv)
+        app.setApplicationName("APEX Launcher")
+        app.setApplicationVersion("3.0")
+        
+        # Set application icon safely
+        try:
+            icon_path = Path(__file__).parent / "apex-launcher.png"
+            if icon_path.exists():
+                app.setWindowIcon(QIcon(str(icon_path)))
+        except Exception:
+            pass  # Don't crash on icon issues
+        
+        # Create and show launcher with error handling
+        try:
+            launcher = ApexLauncher()
+            launcher.show()
+            
+            # Center window safely
+            try:
+                screen = app.primaryScreen().geometry()
+                launcher.move(
+                    (screen.width() - launcher.width()) // 2,
+                    (screen.height() - launcher.height()) // 2
+                )
+            except Exception:
+                pass  # Don't crash on positioning
+            
+            # Apply flags after UI shows
+            try:
+                if deep_flag:
+                    QTimer.singleShot(1000, launcher.deep_scan)  # Delayed to avoid startup crash
+                elif refresh_flag:
+                    QTimer.singleShot(1000, lambda: launcher.load_apps(force_refresh=True))
+            except Exception:
+                pass  # Don't crash on flags
+                
+        except Exception as e:
+            print(f"❌ Failed to create launcher: {e}")
+            # Show minimal error dialog
+            try:
+                error_app = QApplication.instance() or QApplication(sys.argv)
+                QMessageBox.critical(None, "APEX Launcher Error", 
+                                   f"Failed to start launcher:\n{str(e)}")
+            except Exception:
+                print("❌ Critical error - cannot show GUI")
+            sys.exit(1)
+
+        # Run application
+        try:
+            sys.exit(app.exec_())
+        except Exception as e:
+            print(f"❌ Application error: {e}")
+            sys.exit(1)
+            
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

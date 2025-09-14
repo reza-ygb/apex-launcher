@@ -19,8 +19,8 @@ echo "$version" > VERSION
 # Update AUR pkgver
 sed -i -E "s/^(pkgver=).*/\\1$version/" aur/PKGBUILD
 
-# Update Dockerfile label version if present
-sed -i -E "s/^(LABEL version=)\"[^"]*\"/\\1\"$version\"/" Dockerfile || true
+# Update Dockerfile label version if present (careful quoting)
+sed -i -E 's/^(LABEL version=)"[^"]*"/\1"'"$version"'"/' Dockerfile || true
 
 # Optionally regenerate .SRCINFO (requires makepkg)
 if command -v makepkg >/dev/null 2>&1; then

@@ -80,61 +80,12 @@ jobs:
             -d python3 -d python3-qt5 -d python3-pillow \
             usr
 
-      - name: Build AppImage
-        run: |
-          set -euo pipefail
-          mkdir -p build/AppDir/usr/share/apex-launcher
-          mkdir -p build/AppDir/usr/bin
-          mkdir -p build/AppDir/usr/share/applications
-          mkdir -p build/AppDir/usr/share/icons/hicolor/256x256/apps
-
-          # Copy application files
-          cp -av apex_launcher.py smart_cli_launcher.py requirements.txt VERSION build/AppDir/usr/share/apex-launcher/
-          cp -av apex-launcher.png build/AppDir/usr/share/icons/hicolor/256x256/apps/apex-launcher.png
-
-          # Create desktop file adjusted for AppImage
-          sed -E 's|^Exec=.*|Exec=apex-launcher|; s|^Icon=.*|Icon=apex-launcher|' apex-launcher.desktop > build/AppDir/apex-launcher.desktop
-
-          # Create launcher wrapper inside AppImage
-          cat > build/AppDir/usr/bin/apex-launcher << 'EOF'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          HERE="$(readlink -f "$0")"
-          APPDIR="$(dirname "$(dirname "$HERE")")"
-          PYTHON="python3"
-          exec "$PYTHON" "$APPDIR/usr/share/apex-launcher/apex_launcher.py" "$@"
-          EOF
-          chmod +x build/AppDir/usr/bin/apex-launcher
-
-          # Fetch linuxdeploy and python plugin
-          pushd build
-          curl -L -o linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          curl -L -o linuxdeploy-plugin-python https://github.com/linuxdeploy/linuxdeploy-plugin-python/releases/download/continuous/linuxdeploy-plugin-python-x86_64.AppImage
-          chmod +x linuxdeploy linuxdeploy-plugin-python
-          export LINUXDEPLOY=$(pwd)/linuxdeploy
-          export LINUXDEPLOY_PLUGIN_PYTHON=$(pwd)/linuxdeploy-plugin-python
-          export PIP_REQUIREMENTS=../requirements.txt
-
-          # Build AppImage
-          "${LINUXDEPLOY}" \
-            --appdir AppDir \
-            -i AppDir/usr/share/icons/hicolor/256x256/apps/apex-launcher.png \
-            -d AppDir/apex-launcher.desktop \
-            --plugin python \
-            --output appimage
-
-          # Rename output to a stable name
-          APPIMAGE_FILE="$(ls ./*.AppImage | head -n1)"
-          mv "$APPIMAGE_FILE" artifacts/apex-launcher.AppImage
-          popd
-
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
             build/artifacts/apex-launcher.deb
             build/artifacts/apex-launcher.rpm
-            build/artifacts/apex-launcher.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

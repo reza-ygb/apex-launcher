@@ -56,4 +56,4 @@ CMD ["apex-launcher", "--cli"]
 # Metadata
 LABEL maintainer="reza-ygb <https://github.com/reza-ygb>"
 LABEL description="APEX Launcher - Ultimate Linux Application Launcher"
-LABEL version="1.0.0"
+LABEL version="1.0.1"

@@ -1,60 +1,11 @@
-name: Release
-
-on:
-  push:
-    tags:
-      - 'v*'
-
-permissions:
-  contents: write
-  packages: write
-
-jobs:
-  build-and-release:
-    name: Build packages and publish release
-    runs-on: ubuntu-latest
-    env:
-      APPIMAGE_EXTRACT_AND_RUN: '1'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Derive version from tag
-        id: vars
-        run: |
-          VERSION="${GITHUB_REF##*/}"
-          VERSION="${VERSION#v}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "VERSION: $VERSION"
-
-      - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ruby-full build-essential rpm patchelf wget curl file
-          sudo gem install --no-document fpm
-
-      - name: Prepare package root
-        run: |
-          set -euo pipefail
-          mkdir -p build/pkgroot/usr/share/apex-launcher
-          mkdir -p build/pkgroot/usr/bin
-          mkdir -p build/pkgroot/usr/share/applications
-          mkdir -p build/pkgroot/usr/share/pixmaps
-          mkdir -p build/artifacts
-
-          # App files
-          cp -av apex_launcher.py smart_cli_launcher.py requirements.txt VERSION build/pkgroot/usr/share/apex-launcher/
-          cp -av apex-launcher.png build/pkgroot/usr/share/pixmaps/apex-launcher.png
-          # Wrapper and desktop
-          cp -av bin/apex-launcher build/pkgroot/usr/bin/apex-launcher
-          chmod +x build/pkgroot/usr/bin/apex-launcher
-          cp -av apex-launcher.desktop build/pkgroot/usr/share/applications/apex-launcher.desktop
-
-      - name: Build .deb (Debian/Ubuntu)
-        run: |
-          set -euo pipefail
-          fpm -s dir -t deb \
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/artifacts/apex-launcher.deb
+            build/artifacts/apex-launcher.rpm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
             -n apex-launcher \
             -v "${{ steps.vars.outputs.version }}" \
             --license MIT \

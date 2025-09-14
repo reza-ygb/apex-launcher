@@ -1,7 +1,7 @@
 # Maintainer: reza-ygb <reza-ygb@users.noreply.github.com>
 
 pkgname=apex-launcher-bin
-pkgver=1.0.0
+pkgver=1.0.1
 pkgrel=1
 pkgdesc="The fastest, lightest, most reliable application launcher for Linux"
 arch=('any')
